@@ -16,6 +16,7 @@ const VideoTile: React.FC<VideoTileProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
     const setupCamera = async () => {
@@ -23,38 +24,68 @@ const VideoTile: React.FC<VideoTileProps> = ({
         setIsLoading(true);
         setError(null);
         
-        // Skip Capacitor Camera API on web - it's not implemented there
-        // and use browser API directly
+        // Clean up any previous stream
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => {
+            console.log(`Stopping previous track: ${track.label}`);
+            track.stop();
+          });
+          streamRef.current = null;
+        }
+        
         setHasPermission(true); // Assume permission until denied
         
         // If camera is enabled, get the video stream
         if (!isCameraOff) {
           try {
-            console.log("Requesting camera access...");
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-              video: true,
+            console.log("Attempting to access camera...");
+            const constraints = { 
+              video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                facingMode: "user"
+              },
               audio: !isMuted
-            });
+            };
             
-            console.log("Camera access granted, attaching stream");
+            console.log("getUserMedia constraints:", JSON.stringify(constraints));
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            streamRef.current = stream;
+            
+            console.log("Camera stream obtained successfully!");
+            
+            // Debug stream information
+            const videoTracks = stream.getVideoTracks();
+            console.log(`Got ${videoTracks.length} video tracks:`, 
+              videoTracks.map(t => `${t.label} (${t.readyState})`));
+            
+            if (videoTracks.length === 0) {
+              console.warn("Stream has no video tracks!");
+              setError("Camera stream has no video tracks");
+            }
+            
             // Attach stream directly to video element using ref
             if (videoRef.current) {
+              console.log("Attaching stream to video element");
               videoRef.current.srcObject = stream;
               
-              // Debug to verify stream tracks
-              const videoTracks = stream.getVideoTracks();
-              console.log(`Got ${videoTracks.length} video tracks:`, 
-                videoTracks.map(t => `${t.label} (${t.readyState})`));
+              // Ensure the video plays
+              videoRef.current.onloadedmetadata = () => {
+                console.log("Video metadata loaded, playing video");
+                videoRef.current?.play().catch(e => console.error("Error playing video:", e));
+              };
+            } else {
+              console.warn("Video ref is null, can't attach stream");
             }
-          } catch (streamError) {
+          } catch (streamError: any) {
             console.error('Error accessing camera stream:', streamError);
-            setError('Camera access denied or not available');
+            setError(`Camera access error: ${streamError.message || 'Unknown error'}`);
             setHasPermission(false);
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('Camera setup error:', error);
-        setError('Failed to set up camera');
+        setError(`Failed to set up camera: ${error.message || 'Unknown error'}`);
         setHasPermission(false);
       } finally {
         setIsLoading(false);
@@ -63,11 +94,19 @@ const VideoTile: React.FC<VideoTileProps> = ({
 
     setupCamera();
     
+    // Listen for camera state changes
+    const handleCameraStateChange = () => {
+      console.log("Camera state changed event received");
+      setupCamera();
+    };
+    window.addEventListener('cameraStateChanged', handleCameraStateChange);
+    
     // Cleanup function to stop camera when component unmounts
     return () => {
-      const stream = videoRef.current?.srcObject as MediaStream;
-      if (stream) {
-        stream.getTracks().forEach(track => {
+      window.removeEventListener('cameraStateChanged', handleCameraStateChange);
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => {
+          console.log(`Stopping track on unmount: ${track.label}`);
           track.stop();
         });
       }
@@ -96,7 +135,12 @@ const VideoTile: React.FC<VideoTileProps> = ({
               {!hasPermission && !error && (
                 <button 
                   className="block mx-auto mt-2 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
-                  onClick={() => navigator.mediaDevices.getUserMedia({ video: true }).catch(e => console.log(e))}
+                  onClick={() => {
+                    console.log("Manual camera permission request");
+                    navigator.mediaDevices.getUserMedia({ video: true })
+                      .then(() => setupCamera())
+                      .catch(e => console.log("Manual permission error:", e));
+                  }}
                 >
                   Enable Camera
                 </button>

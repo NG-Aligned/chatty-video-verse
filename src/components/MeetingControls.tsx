@@ -10,7 +10,7 @@ interface MeetingControlsProps {
 
 const MeetingControls: React.FC<MeetingControlsProps> = ({ onLeave }) => {
   const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
+  const [isCameraOff, setIsCameraOff] = useState(true); // Start with camera off
   const [hasCamera, setHasCamera] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -18,22 +18,23 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onLeave }) => {
     // Check if the device has camera capabilities
     const checkDeviceCapabilities = async () => {
       try {
+        console.log("Checking media devices...");
         const devices = await navigator.mediaDevices.enumerateDevices();
-        const hasVideoInput = devices.some(device => device.kind === 'videoinput');
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        const hasVideoInput = videoDevices.length > 0;
+        
+        console.log(`Found ${videoDevices.length} video devices:`, 
+          videoDevices.map(d => d.label || 'Unnamed device'));
+        
         setHasCamera(hasVideoInput);
         
         if (!hasVideoInput) {
+          console.warn("No camera detected on this device");
           toast("No camera detected on this device");
         } else {
-          // Try to start camera automatically
-          try {
-            await navigator.mediaDevices.getUserMedia({ video: true });
-            setIsCameraOff(false);
-            console.log("Camera started automatically on page load");
-          } catch (err) {
-            console.log("Could not start camera automatically:", err);
-            setIsCameraOff(true);
-          }
+          console.log("Camera detected, will attempt to initialize...");
+          // Don't auto-start the camera - let the user click to enable
+          setIsCameraOff(true);
         }
       } catch (err) {
         console.error("Error checking media devices:", err);
@@ -42,6 +43,25 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onLeave }) => {
     };
     
     checkDeviceCapabilities();
+    
+    // Additional listener for permission changes
+    const permissionChangeHandler = () => {
+      navigator.permissions.query({ name: 'camera' as PermissionName })
+        .then(permissionStatus => {
+          console.log("Camera permission status:", permissionStatus.state);
+        })
+        .catch(err => console.log("Permission check error:", err));
+    };
+    
+    try {
+      navigator.permissions.query({ name: 'camera' as PermissionName })
+        .then(permissionStatus => {
+          permissionStatus.onchange = permissionChangeHandler;
+        })
+        .catch(err => console.log("Initial permission check error:", err));
+    } catch (err) {
+      console.log("Permission API not supported:", err);
+    }
   }, []);
 
   const toggleMute = () => {
@@ -60,6 +80,7 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onLeave }) => {
     try {
       if (!isCameraOff) {
         // If turning camera off, we don't need to request permissions
+        console.log("Turning camera OFF");
         setIsCameraOff(true);
         toast("Camera turned off");
         
@@ -67,17 +88,37 @@ const MeetingControls: React.FC<MeetingControlsProps> = ({ onLeave }) => {
         window.dispatchEvent(new Event('cameraStateChanged'));
       } else {
         // If turning camera on, try to get camera permission
-        console.log("Requesting camera permission...");
-        await navigator.mediaDevices.getUserMedia({ video: true });
+        console.log("Turning camera ON - requesting permission...");
+        
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            facingMode: "user"
+          }
+        });
+        
+        // Check if we actually got video tracks
+        const videoTracks = stream.getVideoTracks();
+        console.log(`Got ${videoTracks.length} video tracks:`, 
+          videoTracks.map(t => `${t.label} (${t.readyState})`));
+        
+        if (videoTracks.length === 0) {
+          throw new Error("Camera permission granted but no video tracks available");
+        }
+        
         setIsCameraOff(false);
         toast("Camera turned on");
+        
+        // Release this stream as it will be recreated in the VideoTile component
+        stream.getTracks().forEach(track => track.stop());
         
         // Force re-render of VideoGrid to pick up camera state change
         window.dispatchEvent(new Event('cameraStateChanged'));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error toggling camera:", err);
-      toast("Camera access denied. Please check your browser permissions.");
+      toast(`Camera access issue: ${err.message || 'Permission denied'}`);
       setIsCameraOff(true);
     } finally {
       setIsLoading(false);
