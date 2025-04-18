@@ -14,49 +14,89 @@ const VideoTile: React.FC<VideoTileProps> = ({
   isCameraOff = false 
 }) => {
   const [hasPermission, setHasPermission] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const setupCamera = async () => {
       try {
-        // Request camera permissions
-        const cameraPermission = await Camera.checkPermissions();
+        setIsLoading(true);
+        setError(null);
         
-        if (cameraPermission.camera !== 'granted') {
-          const requestResult = await Camera.requestPermissions();
-          if (requestResult.camera !== 'granted') {
-            console.warn('Camera permission not granted');
-            return;
-          }
-        }
+        // Skip Capacitor Camera API on web - it's not implemented there
+        // and use browser API directly
+        setHasPermission(true); // Assume permission until denied
         
-        setHasPermission(true);
-
         // If camera is enabled, get the video stream
-        if (!isCameraOff && hasPermission) {
-          const stream = await navigator.mediaDevices.getUserMedia({ 
-            video: true,
-            audio: !isMuted
-          });
-          
-          // Attach stream directly to video element using ref
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
+        if (!isCameraOff) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+              video: true,
+              audio: !isMuted
+            });
+            
+            // Attach stream directly to video element using ref
+            if (videoRef.current) {
+              videoRef.current.srcObject = stream;
+            }
+          } catch (streamError) {
+            console.error('Error accessing camera stream:', streamError);
+            setError('Camera access denied or not available');
+            setHasPermission(false);
           }
         }
       } catch (error) {
-        console.error('Error accessing camera:', error);
+        console.error('Camera setup error:', error);
+        setError('Failed to set up camera');
+        setHasPermission(false);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     setupCamera();
-  }, [isCameraOff, isMuted, hasPermission]);
+    
+    // Cleanup function to stop camera when component unmounts
+    return () => {
+      const stream = videoRef.current?.srcObject as MediaStream;
+      if (stream) {
+        stream.getTracks().forEach(track => {
+          track.stop();
+        });
+      }
+    };
+  }, [isCameraOff, isMuted]);
 
   return (
     <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
       <div className="absolute inset-0 flex items-center justify-center">
-        {isCameraOff || !hasPermission ? (
-          <div className="text-white text-opacity-60 text-lg">Camera Off</div>
+        {isLoading ? (
+          <div className="text-white text-opacity-70 flex flex-col items-center">
+            <div className="animate-spin h-8 w-8 border-4 border-blue-500 border-t-transparent rounded-full mb-2"></div>
+            <span>Loading camera...</span>
+          </div>
+        ) : isCameraOff || !hasPermission ? (
+          <div className="text-white text-opacity-60 flex flex-col items-center justify-center">
+            <div className="bg-gray-700 p-3 rounded-full mb-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-8 h-8 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14v-4z" strokeLinecap="round" strokeLinejoin="round" />
+                <rect x="3" y="6" width="12" height="12" rx="2" ry="2" />
+                <line x1="2" y1="2" x2="22" y2="22" />
+              </svg>
+            </div>
+            <div className="text-center">
+              {error ? error : "Camera Off"}
+              {!hasPermission && !error && (
+                <button 
+                  className="block mx-auto mt-2 px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+                  onClick={() => navigator.mediaDevices.getUserMedia({ video: true }).catch(e => console.log(e))}
+                >
+                  Enable Camera
+                </button>
+              )}
+            </div>
+          </div>
         ) : (
           <video 
             ref={videoRef}
@@ -86,11 +126,28 @@ const VideoTile: React.FC<VideoTileProps> = ({
 };
 
 const VideoGrid = () => {
+  const [meetingStatus, setMeetingStatus] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if browser supports getUserMedia
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setMeetingStatus("Your browser doesn't support camera access");
+    }
+  }, []);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
-      <VideoTile isLocal={true} />
-      <VideoTile isMuted={true} />
-      <VideoTile isCameraOff={true} />
+    <div className="relative">
+      {meetingStatus && (
+        <div className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-4">
+          <p>{meetingStatus}</p>
+        </div>
+      )}
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-4">
+        <VideoTile isLocal={true} />
+        <VideoTile isMuted={true} />
+        <VideoTile isCameraOff={true} />
+      </div>
     </div>
   );
 };
