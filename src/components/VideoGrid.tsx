@@ -12,7 +12,7 @@ const VideoTile: React.FC<VideoTileProps> = ({ isLocal = false, isMuted = false,
     <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
       {/* Placeholder for video stream */}
       <div className="absolute inset-0 flex items-center justify-center">
-        {cameraOff ? (
+        {isCameraOff ? (
           <div className="text-white text-opacity-60 text-lg">Camera Off</div>
         ) : (
           <div className="w-full h-full bg-gray-700" />
