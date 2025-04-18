@@ -1,5 +1,7 @@
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+import { Plugins } from '@capacitor/core';
+const { Camera } = Plugins;
 
 interface VideoTileProps {
   isLocal?: boolean;
@@ -7,15 +9,50 @@ interface VideoTileProps {
   isCameraOff?: boolean;
 }
 
-const VideoTile: React.FC<VideoTileProps> = ({ isLocal = false, isMuted = false, isCameraOff = false }) => {
+const VideoTile: React.FC<VideoTileProps> = ({ 
+  isLocal = false, 
+  isMuted = false, 
+  isCameraOff = false 
+}) => {
+  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+
+  useEffect(() => {
+    const setupCamera = async () => {
+      try {
+        const cameraPermission = await Camera.checkPermissions();
+        
+        if (cameraPermission.camera !== 'granted') {
+          const requestResult = await Camera.requestPermissions();
+          if (requestResult.camera !== 'granted') {
+            console.warn('Camera permission not granted');
+            return;
+          }
+        }
+
+        if (!isCameraOff) {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+          setVideoSrc(URL.createObjectURL(stream));
+        }
+      } catch (error) {
+        console.error('Error accessing camera:', error);
+      }
+    };
+
+    setupCamera();
+  }, [isCameraOff]);
+
   return (
     <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
-      {/* Placeholder for video stream */}
       <div className="absolute inset-0 flex items-center justify-center">
-        {isCameraOff ? (
+        {isCameraOff || !videoSrc ? (
           <div className="text-white text-opacity-60 text-lg">Camera Off</div>
         ) : (
-          <div className="w-full h-full bg-gray-700" />
+          <video 
+            src={videoSrc} 
+            autoPlay 
+            playsInline 
+            className="w-full h-full object-cover" 
+          />
         )}
       </div>
       
