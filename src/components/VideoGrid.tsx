@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Camera } from '@capacitor/camera';
 
 interface VideoTileProps {
   isLocal?: boolean;
@@ -31,14 +30,21 @@ const VideoTile: React.FC<VideoTileProps> = ({
         // If camera is enabled, get the video stream
         if (!isCameraOff) {
           try {
+            console.log("Requesting camera access...");
             const stream = await navigator.mediaDevices.getUserMedia({ 
               video: true,
               audio: !isMuted
             });
             
+            console.log("Camera access granted, attaching stream");
             // Attach stream directly to video element using ref
             if (videoRef.current) {
               videoRef.current.srcObject = stream;
+              
+              // Debug to verify stream tracks
+              const videoTracks = stream.getVideoTracks();
+              console.log(`Got ${videoTracks.length} video tracks:`, 
+                videoTracks.map(t => `${t.label} (${t.readyState})`));
             }
           } catch (streamError) {
             console.error('Error accessing camera stream:', streamError);
@@ -102,7 +108,7 @@ const VideoTile: React.FC<VideoTileProps> = ({
             ref={videoRef}
             autoPlay 
             playsInline 
-            muted={isMuted}
+            muted={true} // Always mute local video to prevent feedback
             className="w-full h-full object-cover" 
           />
         )}
