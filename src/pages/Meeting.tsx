@@ -5,7 +5,7 @@ import MeetingControls from '../components/MeetingControls';
 import { useNavigate } from 'react-router-dom';
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from '@/components/ui/button';
-import { Users } from 'lucide-react';
+import { Users, MicOff, VideoOff } from 'lucide-react';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 const Meeting = () => {
