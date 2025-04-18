@@ -1,7 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
-import { Plugins } from '@capacitor/core';
-const { Camera } = Plugins;
+import React, { useState, useEffect, useRef } from 'react';
+import { Camera } from '@capacitor/camera';
 
 interface VideoTileProps {
   isLocal?: boolean;
@@ -14,11 +13,13 @@ const VideoTile: React.FC<VideoTileProps> = ({
   isMuted = false, 
   isCameraOff = false 
 }) => {
-  const [videoSrc, setVideoSrc] = useState<string | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean>(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     const setupCamera = async () => {
       try {
+        // Request camera permissions
         const cameraPermission = await Camera.checkPermissions();
         
         if (cameraPermission.camera !== 'granted') {
@@ -28,10 +29,20 @@ const VideoTile: React.FC<VideoTileProps> = ({
             return;
           }
         }
+        
+        setHasPermission(true);
 
-        if (!isCameraOff) {
-          const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-          setVideoSrc(URL.createObjectURL(stream));
+        // If camera is enabled, get the video stream
+        if (!isCameraOff && hasPermission) {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true,
+            audio: !isMuted
+          });
+          
+          // Attach stream directly to video element using ref
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
         }
       } catch (error) {
         console.error('Error accessing camera:', error);
@@ -39,18 +50,19 @@ const VideoTile: React.FC<VideoTileProps> = ({
     };
 
     setupCamera();
-  }, [isCameraOff]);
+  }, [isCameraOff, isMuted, hasPermission]);
 
   return (
     <div className="relative bg-gray-800 rounded-lg overflow-hidden aspect-video">
       <div className="absolute inset-0 flex items-center justify-center">
-        {isCameraOff || !videoSrc ? (
+        {isCameraOff || !hasPermission ? (
           <div className="text-white text-opacity-60 text-lg">Camera Off</div>
         ) : (
           <video 
-            src={videoSrc} 
+            ref={videoRef}
             autoPlay 
             playsInline 
+            muted={isMuted}
             className="w-full h-full object-cover" 
           />
         )}
